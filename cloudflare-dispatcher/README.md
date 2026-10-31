@@ -10,6 +10,12 @@ Only scheduled events can dispatch. Every HTTP request returns 404; `workers.dev
 
 An accepted GitHub dispatch is not proof that a cycle started, finished or passed. GitHub runners can still queue or lose timeliness, and provider outages remain possible. Cron changes can take up to fifteen minutes to propagate. Observe actual completed cycle timestamps; this helper alone does not establish the required PASS every five minutes or the 24-hour acceptance window.
 
+## Workers redirect compatibility correction
+
+Workers does not implement the Fetch-standard `redirect: 'error'` mode. It throws during Request construction, including inside `fetch(url, init)`, before sending a request. The dispatcher's sanitized catch therefore reported `dispatcher/network-failed` even though the failure was local request configuration. The [official Request documentation](https://developers.cloudflare.com/workers/runtime-apis/request/) explicitly requires manual mode and a status check instead.
+
+The dispatcher now sets `redirect: 'manual'` and rejects every HTTP 300–399 response with `dispatcher/redirect-rejected`. It never follows a Location, changes its destination or retries. TLS validation, the fixed API endpoint, version/User-Agent headers, credential scope, main/cycle/bootstrap-false payload and ten-second timeout remain unchanged. HTTP errors still produce a fixed sanitized error; no raw exceptions, headers, response data or credentials are logged. The correction needs a hosted Cron→GitHub→completed-checker validation after the monitoring-only redeployment; local tests do not establish that operational result.
+
 ## Free plan and authorization prerequisites
 
 Before deployment, verify the selected account remains on **Workers Free**, that its shared quota has headroom, and that creating this monitoring-only Worker uses an available Cron slot. Do not upgrade, enable a paid plan or attach storage, queues, databases or custom domains. Published Workers Free limits are 100,000 requests/day and 10 ms CPU per invocation. At five-minute cadence this helper expects 288 invocations/day; waiting for network I/O is separate from CPU time. Expected incremental charge is zero within the verified Free limits. Runtime CPU/quota behavior still needs a hosted observation; an exceeded free limit must stop work rather than motivate a paid upgrade.
@@ -36,7 +42,11 @@ Keep overlap with GitHub's native schedule bounded to the validation window. If 
 
 ## Offline tests
 
-Run `node --test cloudflare-dispatcher/tests/worker.test.mjs` from the repository root. Tests use fake requests only and require no dependencies or credentials. They cover the disabled default, exact target/body, redirect rejection, expiry, sanitized failures, ten-second abort and always-404 HTTP behavior. They do not attest deployment, live provider permissions, 10 ms CPU use or actual cadence.
+Run `node --test cloudflare-dispatcher/tests/worker.test.mjs` for the dependency-free unit checks. They cover the disabled default, exact target/body, every 300–399 status without retries, expiry, sanitized failures, ten-second abort, always-404 HTTP behavior and the clock-switch guard.
+
+The runtime regression suite is `node --test cloudflare-dispatcher/tests/workerd.test.mjs`. It requires the official Miniflare/workerd runtime locally; it fails rather than silently skipping if unavailable. Install/resolve the reviewed Miniflare package, or set `MINIFLARE_MODULE` to the local module path already supplied by a reviewed Wrangler installation. The validated installation identifies Miniflare `5.20261023.3-beta` and workerd package `1.20261023.1`. Its runtime reports support for compatibility dates through `2026-10-30`, so the local suite states that date explicitly; it does not modify the deployed `2026-10-31` configuration.
+
+The workerd suite executes the actual scheduled handler through a test-only local wrapper and intercepts every outbound request with an in-process fake service. It reproduces the original unsupported error mode with zero outbound calls, proves the corrected path sends one exact mocked POST, and rejects representative 3xx responses without following or retrying. A simulated HTTP 403 is distinguished from the original pre-network failure. No real PAT, account access, Internet dispatch, application endpoint or production heartbeat is used. These tests do not attest deployment, live provider permissions, 10 ms CPU use or actual cadence.
 
 ## Primary references
 

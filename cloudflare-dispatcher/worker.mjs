@@ -15,7 +15,9 @@ export async function dispatch(env, { fetcher = fetch, now = Date.now, setTimer 
     try {
       response = await fetcher(DISPATCH_URL, {
         method: 'POST',
-        redirect: 'error',
+        // Workers supports manual/follow, but rejects the standard error mode
+        // before sending anything. Manual mode never follows a redirect.
+        redirect: 'manual',
         signal: controller.signal,
         headers: {
           Authorization: 'Bearer ' + token,
@@ -30,6 +32,7 @@ export async function dispatch(env, { fetcher = fetch, now = Date.now, setTimer 
     // Modern dispatch returns 200; older compatible API behavior returns 204.
     // No response body, header or credential is inspected or logged.
     try { await response.body?.cancel(); } catch { /* Discard unread data. */ }
+    if (response.status >= 300 && response.status < 400) throw new Error('dispatcher/redirect-rejected');
     if (response.status !== 200 && response.status !== 204) throw new Error('dispatcher/github-dispatch-failed');
     return { status: 'accepted' };
   } finally { clearTimer(timer); }

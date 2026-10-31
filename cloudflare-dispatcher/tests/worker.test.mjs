@@ -12,7 +12,7 @@ test('disabled by default and no request made', async () => {
 test('one exact TLS target, main cycle and no bootstrap; overrides ignored', async () => {
   let calls = 0;
   await dispatch({ ...env, DISPATCH_URL: 'https://example.invalid', operation: 'provider-test', bootstrap: 'true' }, { fetcher: async (url, request) => {
-    calls++; assert.equal(url, DISPATCH_URL); assert.equal(request.method, 'POST'); assert.equal(request.redirect, 'error');
+    calls++; assert.equal(url, DISPATCH_URL); assert.equal(request.method, 'POST'); assert.equal(request.redirect, 'manual');
     assert.deepEqual(JSON.parse(request.body), { ref: 'main', inputs: { operation: 'cycle', bootstrap: false } });
     assert.equal(request.headers.Authorization, 'Bearer ' + env.GITHUB_DISPATCH_TOKEN);
     assert.equal(request.headers['X-GitHub-Api-Version'], '2026-03-10');
@@ -30,7 +30,12 @@ test('expired or incomplete credentials fail before network', async () => {
   assert.equal(calls, 0);
 });
 test('redirect and HTTP errors yield fixed error without reading response', async () => {
-  for (const status of [301, 302, 401, 403, 429, 500]) {
+  for (let status = 300; status < 400; status++) {
+    let calls = 0;
+    await assert.rejects(dispatch(env, { fetcher: async () => { calls++; return { status, text: () => { throw Error('must not read body'); }, headers: new Proxy({}, { get() { throw Error('must not inspect Location'); } }) }; } }), { message: 'dispatcher/redirect-rejected' });
+    assert.equal(calls, 1);
+  }
+  for (const status of [401, 403, 429, 500]) {
     await assert.rejects(dispatch(env, { fetcher: async () => ({ status, text: () => { throw Error('must not read body'); } }) }), { message: 'dispatcher/github-dispatch-failed' });
   }
 });

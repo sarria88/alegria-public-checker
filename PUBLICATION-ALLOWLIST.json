@@ -41,6 +41,7 @@
     "checker/tests/fixture.mjs",
     "cloudflare-dispatcher/README.md",
     "cloudflare-dispatcher/tests/worker.test.mjs",
+    "cloudflare-dispatcher/tests/workerd.test.mjs",
     "cloudflare-dispatcher/worker.mjs",
     "cloudflare-dispatcher/wrangler.toml"
   ]

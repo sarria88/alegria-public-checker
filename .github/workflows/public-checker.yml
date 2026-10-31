@@ -5,6 +5,13 @@ on:
     - cron: '2-59/5 * * * *'
   workflow_dispatch:
     inputs:
+      operation:
+        description: 'Production cycle or isolated safe provider test'
+        type: choice
+        options:
+          - cycle
+          - provider-test
+        default: cycle
       bootstrap:
         description: 'Explicit first-run state initialization only; never reset an incident'
         type: boolean
@@ -14,12 +21,12 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: external-public-checker
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'provider-test' && 'external-public-checker-provider-test' || 'external-public-checker' }}
   cancel-in-progress: false
 
 jobs:
   monitor:
-    if: vars.PUBLIC_CHECKER_ENABLED == 'true' && vars.CHECKER_STORAGE_VERIFIED == 'true' && github.ref == 'refs/heads/main'
+    if: vars.PUBLIC_CHECKER_ENABLED == 'true' && vars.CHECKER_STORAGE_VERIFIED == 'true' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.operation == 'cycle')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -166,4 +173,46 @@ jobs:
           if-no-files-found: error
       - name: Fail on cycle, encryption or storage-budget failure
         if: always() && (steps.budget.outcome != 'success' || steps.cycle.outcome != 'success' || steps.images.outcome != 'success' || steps.state.outcome != 'success' || steps.evidence.outcome != 'success' || steps.metrics.outcome != 'success')
+        run: exit 1
+
+  provider_test:
+    if: vars.PUBLIC_CHECKER_ENABLED == 'true' && vars.CHECKER_STORAGE_VERIFIED == 'true' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'provider-test'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify reserved storage envelope
+        id: budget
+        env:
+          CHECKER_EVIDENCE_LIMIT_BYTES: ${{ vars.CHECKER_EVIDENCE_LIMIT_BYTES }}
+          CHECKER_RESERVED_STORAGE_BYTES: ${{ vars.CHECKER_RESERVED_STORAGE_BYTES }}
+        run: node automation/storage-budget.mjs
+      - name: Run isolated labeled provider test
+        id: test
+        continue-on-error: true
+        env:
+          BETTER_STACK_API_TOKEN: ${{ secrets.BETTER_STACK_API_TOKEN }}
+          BETTER_STACK_REQUESTER_EMAIL: ${{ secrets.BETTER_STACK_REQUESTER_EMAIL }}
+          PRODUCTION_COMPLETION_HEARTBEAT_URL: ${{ secrets.BETTER_STACK_COMPLETION_HEARTBEAT_URL }}
+        run: node automation/provider-test.mjs
+      - name: Encrypt bounded provider test receipt
+        id: receipt
+        if: always() && steps.budget.outcome == 'success'
+        env:
+          CHECKER_ARTIFACT_KEY: ${{ secrets.CHECKER_ARTIFACT_KEY }}
+        run: node automation/sealed-artifacts.mjs seal runtime/provider-test/receipt sealed/provider-test/provider-test.sealed metrics 8192
+      - name: Retain encrypted test receipt for seven days
+        if: always() && steps.budget.outcome == 'success' && steps.receipt.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: checker-provider-test-encrypted-${{ github.run_id }}
+          path: sealed/provider-test/provider-test.sealed
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+      - name: Propagate provider test failure
+        if: always() && (steps.budget.outcome != 'success' || steps.test.outcome != 'success' || steps.receipt.outcome != 'success')
         run: exit 1

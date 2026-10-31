@@ -38,6 +38,10 @@
     "checker/tests/better-stack.test.mjs",
     "checker/tests/browser.test.mjs",
     "checker/tests/core.test.mjs",
-    "checker/tests/fixture.mjs"
+    "checker/tests/fixture.mjs",
+    "cloudflare-dispatcher/README.md",
+    "cloudflare-dispatcher/tests/worker.test.mjs",
+    "cloudflare-dispatcher/worker.mjs",
+    "cloudflare-dispatcher/wrangler.toml"
   ]
 }

@@ -21,12 +21,12 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'provider-test' && 'external-public-checker-provider-test' || 'external-public-checker' }}
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'provider-test' && 'external-public-checker-provider-test' || github.event_name == 'schedule' && vars.CHECKER_CLOCK == 'external' && 'external-public-checker-native-disabled' || 'external-public-checker' }}
   cancel-in-progress: false
 
 jobs:
   monitor:
-    if: vars.PUBLIC_CHECKER_ENABLED == 'true' && vars.CHECKER_STORAGE_VERIFIED == 'true' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.operation == 'cycle')
+    if: vars.PUBLIC_CHECKER_ENABLED == 'true' && vars.CHECKER_STORAGE_VERIFIED == 'true' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.operation == 'cycle') && (github.event_name != 'schedule' || vars.CHECKER_CLOCK != 'external')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

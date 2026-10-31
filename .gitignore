@@ -1,0 +1,9 @@
+runtime/
+sealed/
+node_modules/
+checker/node_modules/
+artifacts/
+*.sealed
+*.zip
+*.key
+.env*

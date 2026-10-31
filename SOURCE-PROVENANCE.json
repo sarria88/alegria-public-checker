@@ -1,0 +1,82 @@
+{
+  "sourceRevision": "398c544226c21182245284dbdf262bc3b3adf58e",
+  "originalCheckerFiles": [
+    {
+      "name": "browser.mjs",
+      "sha": "86910588143c4c0f892e0dd44767705312983cd5",
+      "type": "file"
+    },
+    {
+      "name": "checker.mjs",
+      "sha": "3cc4e434b4b8cc0debf752f9cf8840569ed5842c",
+      "type": "file"
+    },
+    {
+      "name": "cli.mjs",
+      "sha": "b732b72f4a35bb8af1e8cf5ec6d9b88fcb0a31cd",
+      "type": "file"
+    },
+    {
+      "name": "config.mjs",
+      "sha": "53610848feec31a7311dac8cb299b8d9b4b45f3d",
+      "type": "file"
+    },
+    {
+      "name": "contracts.mjs",
+      "sha": "0fd6c8d00ed1787db24aa1f0a474873532f3e3f3",
+      "type": "file"
+    },
+    {
+      "name": "country-codes.json",
+      "sha": "c5f7e5bc97ca4840b7e9cc9494718a9b30012ece",
+      "type": "file"
+    },
+    {
+      "name": "gate.mjs",
+      "sha": "d8fd9fe1c9aa3760a77c078c136a3c83f15ca3e4",
+      "type": "file"
+    },
+    {
+      "name": "http.mjs",
+      "sha": "130c1795d3e3a521a7009447b7d303f037e9c957",
+      "type": "file"
+    },
+    {
+      "name": "manifest.mjs",
+      "sha": "e96664866489c8b49106d8e865a7ad351c0fa272",
+      "type": "file"
+    },
+    {
+      "name": "package-lock.json",
+      "sha": "d5641d98d6944cbf32e73f59ca2b1561af39fe29",
+      "type": "file"
+    },
+    {
+      "name": "package.json",
+      "sha": "1bc4bbfd2f6829310a9c635b9074659971969269",
+      "type": "file"
+    },
+    {
+      "name": "schemas.mjs",
+      "sha": "8c620366f4ef68b053d8d3831e745b2826a23d8e",
+      "type": "file"
+    },
+    {
+      "name": "state.mjs",
+      "sha": "a94ba4442b3f0424f383f7e7bd8241f4d760996b",
+      "type": "file"
+    },
+    {
+      "name": "tests",
+      "sha": "4bebe78d9725df7650344e5d22c3a02d38caf4be",
+      "type": "dir"
+    }
+  ],
+  "addedComponents": [
+    "checker/adapters/better-stack.mjs",
+    "checker/tests/better-stack.test.mjs",
+    "automation/",
+    ".github/workflows/public-checker.yml"
+  ],
+  "note": "Original portable checker only; no original repository history or application sources."
+}

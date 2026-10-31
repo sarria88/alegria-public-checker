@@ -1,0 +1,169 @@
+name: External public checker
+
+on:
+  schedule:
+    - cron: '2-59/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: 'Explicit first-run state initialization only; never reset an incident'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: external-public-checker
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    if: vars.PUBLIC_CHECKER_ENABLED == 'true' && vars.CHECKER_STORAGE_VERIFIED == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify reserved storage envelope
+        id: budget
+        env:
+          CHECKER_EVIDENCE_LIMIT_BYTES: ${{ vars.CHECKER_EVIDENCE_LIMIT_BYTES }}
+          CHECKER_RESERVED_STORAGE_BYTES: ${{ vars.CHECKER_RESERVED_STORAGE_BYTES }}
+        run: node automation/storage-budget.mjs
+      - name: Restore encrypted paired state
+        id: restore
+        env:
+          CHECKER_ARTIFACT_KEY: ${{ secrets.CHECKER_ARTIFACT_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CHECKER_BOOTSTRAP: ${{ inputs.bootstrap }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CHECKER_ARTIFACT_KEY"
+          mkdir -p runtime/state
+          artifact_id=$(gh api "repos/$GH_REPO/actions/artifacts?name=checker-state-encrypted&per_page=100" --jq '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main")] | sort_by(.created_at) | last | .id // empty')
+          if [ -n "$artifact_id" ]; then
+            gh api "repos/$GH_REPO/actions/artifacts/$artifact_id/zip" > "$RUNNER_TEMP/checker-state.zip"
+            test "$(unzip -Z1 "$RUNNER_TEMP/checker-state.zip")" = state.sealed
+            unzip -p "$RUNNER_TEMP/checker-state.zip" state.sealed > "$RUNNER_TEMP/state.sealed"
+            node automation/sealed-artifacts.mjs unseal "$RUNNER_TEMP/state.sealed" runtime/state state
+            node automation/state.mjs validate
+          elif [ "$CHECKER_BOOTSTRAP" = true ]; then
+            node automation/state.mjs bootstrap
+          else
+            echo 'No retained state; explicit first-run bootstrap or incident reconciliation required.' >&2
+            exit 2
+          fi
+      - name: Install locked screenshot packer
+        working-directory: automation
+        run: npm ci --ignore-scripts
+      - name: Install locked browser dependencies
+        working-directory: checker
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Execute HTTP and browser cycle with restricted logs
+        id: cycle
+        continue-on-error: true
+        env:
+          BETTER_STACK_API_TOKEN: ${{ secrets.BETTER_STACK_API_TOKEN }}
+          BETTER_STACK_COMPLETION_HEARTBEAT_URL: ${{ secrets.BETTER_STACK_COMPLETION_HEARTBEAT_URL }}
+          BETTER_STACK_REQUESTER_EMAIL: ${{ secrets.BETTER_STACK_REQUESTER_EMAIL }}
+          BETTER_STACK_INSTANCE: external-public-checker
+          PUBLIC_CHECKER_MANIFEST_JSON: ${{ secrets.PUBLIC_CHECKER_MANIFEST_JSON }}
+          EXPECTED_API_RELEASE: ${{ secrets.EXPECTED_API_RELEASE }}
+          EXPECTED_FRONTEND_RELEASE: ${{ secrets.EXPECTED_FRONTEND_RELEASE }}
+          CHECKER_ACA_APP_URL: ${{ secrets.CHECKER_ACA_APP_URL }}
+          CHECKER_ACA_REVISION_URL: ${{ secrets.CHECKER_ACA_REVISION_URL }}
+        run: node automation/run-cycle.mjs
+      - name: Summarize bounded counters
+        if: always() && steps.budget.outcome == 'success'
+        run: node automation/aggregate.mjs
+      - name: Pack exact screenshot pixels into encrypted shared objects
+        id: images
+        if: always() && steps.budget.outcome == 'success' && steps.restore.outcome == 'success'
+        continue-on-error: true
+        env:
+          CHECKER_ARTIFACT_KEY: ${{ secrets.CHECKER_ARTIFACT_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node automation/pack-images.mjs
+      - name: Encrypt state within reserved storage budget
+        id: state
+        if: always() && steps.budget.outcome == 'success' && steps.restore.outcome == 'success'
+        continue-on-error: true
+        env:
+          CHECKER_ARTIFACT_KEY: ${{ secrets.CHECKER_ARTIFACT_KEY }}
+        run: |
+          node automation/state.mjs validate
+          node automation/sealed-artifacts.mjs seal runtime/state sealed/state/state.sealed state 16384
+      - name: Encrypt complete evidence within reserved storage budget
+        id: evidence
+        if: always() && steps.budget.outcome == 'success' && steps.images.outcome == 'success'
+        continue-on-error: true
+        env:
+          CHECKER_ARTIFACT_KEY: ${{ secrets.CHECKER_ARTIFACT_KEY }}
+          CHECKER_EVIDENCE_LIMIT_BYTES: ${{ vars.CHECKER_EVIDENCE_LIMIT_BYTES }}
+        run: node automation/sealed-artifacts.mjs seal runtime/evidence sealed/evidence/evidence.sealed evidence "$CHECKER_EVIDENCE_LIMIT_BYTES"
+      - name: Encrypt aggregate metrics within reserved storage budget
+        id: metrics
+        if: always() && steps.budget.outcome == 'success'
+        continue-on-error: true
+        env:
+          CHECKER_ARTIFACT_KEY: ${{ secrets.CHECKER_ARTIFACT_KEY }}
+        run: node automation/sealed-artifacts.mjs seal runtime/metrics sealed/metrics/metrics.sealed metrics 4096
+      - name: Store encrypted state for seven days
+        id: upload_state
+        if: always() && steps.budget.outcome == 'success' && steps.state.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: checker-state-encrypted
+          path: sealed/state/state.sealed
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+      - name: Store first encrypted screenshot object for fourteen days
+        id: upload_image0
+        if: always() && steps.budget.outcome == 'success' && steps.images.outcome == 'success' && steps.upload_state.outcome == 'success' && steps.images.outputs.image0_needed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.images.outputs.image0_name }}
+          path: sealed/images/0.sealed
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
+      - name: Store second encrypted screenshot object for fourteen days
+        id: upload_image1
+        if: always() && steps.budget.outcome == 'success' && steps.images.outcome == 'success' && steps.upload_state.outcome == 'success' && steps.images.outputs.image1_needed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.images.outputs.image1_name }}
+          path: sealed/images/1.sealed
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
+      - name: Store encrypted evidence for seven days
+        if: always() && steps.budget.outcome == 'success' && steps.evidence.outcome == 'success' && steps.upload_state.outcome == 'success' && (steps.images.outputs.image0_needed != 'true' || steps.upload_image0.outcome == 'success') && (steps.images.outputs.image1_needed != 'true' || steps.upload_image1.outcome == 'success')
+        uses: actions/upload-artifact@v4
+        with:
+          name: checker-evidence-encrypted-${{ github.run_id }}
+          path: sealed/evidence/evidence.sealed
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+      - name: Store encrypted aggregate metrics for thirty days
+        if: always() && steps.budget.outcome == 'success' && steps.metrics.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: checker-metrics-encrypted-${{ github.run_id }}
+          path: sealed/metrics/metrics.sealed
+          retention-days: 30
+          compression-level: 0
+          if-no-files-found: error
+      - name: Fail on cycle, encryption or storage-budget failure
+        if: always() && (steps.budget.outcome != 'success' || steps.cycle.outcome != 'success' || steps.images.outcome != 'success' || steps.state.outcome != 'success' || steps.evidence.outcome != 'success' || steps.metrics.outcome != 'success')
+        run: exit 1

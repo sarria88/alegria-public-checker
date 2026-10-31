@@ -1,0 +1,17 @@
+name = "alegria-checker-dispatcher"
+main = "worker.mjs"
+compatibility_date = "2026-10-31"
+workers_dev = false
+preview_urls = false
+routes = []
+
+# Confirm Workers Free in the account before deploying this monitoring helper.
+# No domain, DNS record, route, storage, queue or application deployment.
+[vars]
+ENABLED = "false"
+GITHUB_TOKEN_EXPIRES_AT = ""
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+# GITHUB_DISPATCH_TOKEN is a secret binding entered by the operator, never here.
